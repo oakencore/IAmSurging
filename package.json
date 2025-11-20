@@ -1,0 +1,12 @@
+{
+  "name": "i-am-surging",
+  "version": "0.1.0",
+  "description": "Production-ready Rust client for Switchboard Surge price feeds",
+  "private": true,
+  "dependencies": {
+    "@switchboard-xyz/common": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

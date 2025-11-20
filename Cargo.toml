@@ -1,0 +1,60 @@
+[workspace]
+# This is a standalone project, not part of the parent workspace
+
+[package]
+name = "i-am-surging"
+version = "0.1.0"
+edition = "2021"
+authors = ["Switchboard Surge User"]
+description = "Production-ready Rust client for Switchboard Surge price feeds"
+license = "MIT"
+
+[lib]
+name = "i_am_surging"
+path = "src/lib.rs"
+
+[[bin]]
+name = "surge-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# WebSocket client
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+
+# JSON serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Logging (optional, for debugging)
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
+# Base58 encoding (for Solana addresses)
+bs58 = "0.5"
+
+# Async channels for event streaming
+tokio-stream = "0.1"
+
+# URL handling
+url = "2.5"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+logging = ["tracing", "tracing-subscriber"]

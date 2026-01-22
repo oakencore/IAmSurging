@@ -1,121 +1,78 @@
-use reqwest::Client;
-
 use crate::error::{Result, SurgeError};
 use crate::feed_loader::FeedLoader;
+use crate::normalize_symbol;
 use crate::types::FeedPrice;
 
-/// Default Switchboard Crossbar URL
-pub const DEFAULT_GATEWAY_URL: &str = "http://crossbar.switchboard.xyz";
+const CROSSBAR_URL: &str = "https://crossbar.switchboard.xyz";
 
-/// Switchboard Surge client for fetching price feeds
+/// Switchboard Surge client for fetching cryptocurrency prices
 pub struct SurgeClient {
-    /// HTTP client
-    #[allow(dead_code)]
-    http_client: Client,
-    /// Feed loader
-    feed_loader: FeedLoader,
-    /// Gateway URL
-    #[allow(dead_code)]
-    gateway_url: String,
-    /// API key (wallet address)
-    #[allow(dead_code)]
-    api_key: String,
+    http: reqwest::Client,
+    feeds: FeedLoader,
+}
+
+#[derive(serde::Deserialize)]
+struct SimulateResponse {
+    results: Vec<String>,
 }
 
 impl SurgeClient {
-    /// Create a new Surge client with API key
-    pub fn new(api_key: impl Into<String>) -> Result<Self> {
-        let feed_loader = FeedLoader::load_default()?;
-
+    /// Create a new Surge client
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            http_client: Client::new(),
-            feed_loader,
-            gateway_url: DEFAULT_GATEWAY_URL.to_string(),
-            api_key: api_key.into(),
+            http: reqwest::Client::new(),
+            feeds: FeedLoader::load_default()?,
         })
     }
 
-    /// Create a new Surge client with custom gateway URL
-    pub fn with_gateway(api_key: impl Into<String>, gateway_url: impl Into<String>) -> Result<Self> {
-        let feed_loader = FeedLoader::load_default()?;
-
-        Ok(Self {
-            http_client: Client::new(),
-            feed_loader,
-            gateway_url: gateway_url.into(),
-            api_key: api_key.into(),
-        })
-    }
-
-    /// Get the latest price for a symbol
+    /// Get the latest price for a symbol (e.g., "BTC/USD" or "btc")
     pub async fn get_price(&self, symbol: &str) -> Result<FeedPrice> {
-        let feed = self.feed_loader.get_feed(symbol)?;
-        let value = self.simulate_feed(&feed.feed_id).await?;
-
-        Ok(FeedPrice::new(
-            feed.symbol.to_string(),
-            feed.feed_id,
-            value,
-        ))
+        let symbol = normalize_symbol(symbol);
+        let feed_id = self.feeds.get_feed_id(&symbol)?;
+        let price = self.fetch_price(feed_id).await?;
+        Ok(FeedPrice {
+            symbol,
+            feed_id: feed_id.to_string(),
+            value: price,
+        })
     }
 
     /// Get prices for multiple symbols
     pub async fn get_multiple_prices(&self, symbols: &[&str]) -> Result<Vec<FeedPrice>> {
         let mut prices = Vec::new();
-
         for symbol in symbols {
             match self.get_price(symbol).await {
                 Ok(price) => prices.push(price),
-                Err(e) => {
-                    eprintln!("Warning: Failed to get price for {}: {}", symbol, e);
-                }
+                Err(e) => eprintln!("Warning: {}", e),
             }
         }
-
         Ok(prices)
     }
 
     /// Check if a symbol is available
     pub fn has_symbol(&self, symbol: &str) -> bool {
-        self.feed_loader.has_symbol(symbol)
+        let symbol = normalize_symbol(symbol);
+        self.feeds.has_symbol(&symbol)
     }
 
     /// Get all available symbols
     pub fn get_all_symbols(&self) -> Vec<String> {
-        self.feed_loader.get_all_symbols()
+        self.feeds.get_all_symbols()
     }
 
-    /// Simulate a feed to get the current price
-    ///
-    /// Note: This currently uses a Node.js helper script to handle protobuf encoding/decoding
-    /// until full protobuf support is added to the Rust client.
-    async fn simulate_feed(&self, feed_id: &str) -> Result<f64> {
-        use std::process::Command;
+    async fn fetch_price(&self, feed_id: &str) -> Result<f64> {
+        let url = format!("{}/simulate/{}", CROSSBAR_URL, feed_id);
+        let resp: Vec<SimulateResponse> = self.http.get(&url).send().await?.json().await?;
+        resp.first()
+            .and_then(|r| r.results.first())
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| SurgeError::ApiError(format!("No price data for feed {}", feed_id)))
+    }
+}
 
-        // Call the Node.js helper script that uses the Switchboard SDK
-        let output = Command::new("node")
-            .arg("fetch-price.js")
-            .arg(feed_id)
-            .env("ANCHOR_WALLET", std::env::var("ANCHOR_WALLET").unwrap_or_default())
-            .env("ANCHOR_PROVIDER_URL", std::env::var("ANCHOR_PROVIDER_URL").unwrap_or_default())
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .output()
-            .map_err(|e| SurgeError::ApiError(format!("Failed to execute helper script: {}", e)))?;
-
-        if !output.status.success() {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            return Err(SurgeError::ApiError(format!(
-                "Helper script failed: {}",
-                error_msg.trim()
-            )));
-        }
-
-        // Parse the price from stdout
-        let price_str = String::from_utf8_lossy(&output.stdout);
-        let price = price_str.trim().parse::<f64>()
-            .map_err(|e| SurgeError::ApiError(format!("Failed to parse price: {}", e)))?;
-
-        Ok(price)
+impl Default for SurgeClient {
+    fn default() -> Self {
+        Self::new().expect("Failed to create SurgeClient")
     }
 }
 
@@ -123,14 +80,41 @@ impl SurgeClient {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_surge_client() {
-        // This test requires SURGE_API_KEY environment variable and feedIds.json
-        if let Ok(api_key) = std::env::var("SURGE_API_KEY") {
-            if let Ok(client) = SurgeClient::new(&api_key) {
-                // Test that we can create a client
-                assert!(client.has_symbol("BTC/USD"));
-            }
-        }
+    #[test]
+    fn test_client_new() {
+        let client = SurgeClient::new();
+        assert!(client.is_ok(), "should create client successfully");
+    }
+
+    #[test]
+    fn test_client_default() {
+        let client = SurgeClient::default();
+        assert!(client.has_symbol("BTC/USD"));
+    }
+
+    #[test]
+    fn test_client_has_symbol_with_shortcuts() {
+        let client = SurgeClient::new().unwrap();
+        assert!(client.has_symbol("btc"), "should find btc");
+        assert!(client.has_symbol("BTC"), "should find BTC");
+        assert!(client.has_symbol("BTC/USD"), "should find BTC/USD");
+        assert!(client.has_symbol("btc/usd"), "should find btc/usd");
+    }
+
+    #[test]
+    fn test_client_has_symbol_returns_false_for_invalid() {
+        let client = SurgeClient::new().unwrap();
+        assert!(!client.has_symbol("NOTREAL"));
+        assert!(!client.has_symbol("fake/coin"));
+    }
+
+    #[test]
+    fn test_client_get_all_symbols() {
+        let client = SurgeClient::new().unwrap();
+        let symbols = client.get_all_symbols();
+        assert!(symbols.len() > 2000, "should have 2000+ symbols");
+        assert!(symbols.contains(&"BTC/USD".to_string()));
+        assert!(symbols.contains(&"ETH/USD".to_string()));
+        assert!(symbols.contains(&"SOL/USD".to_string()));
     }
 }

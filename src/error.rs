@@ -1,52 +1,50 @@
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use thiserror::Error;
 
-/// Custom error type for Surge client operations
 #[derive(Debug, Error)]
 pub enum SurgeError {
-    /// HTTP request failed
-    #[error("HTTP request failed: {0}")]
+    #[error("HTTP error: {0}")]
     HttpError(#[from] reqwest::Error),
 
-    /// JSON parsing error
-    #[error("JSON parsing error: {0}")]
+    #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 
-    /// IO error (e.g., reading feedIds.json)
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
-    /// WebSocket error
-    #[error("WebSocket error: {0}")]
-    WebSocketError(String),
-
-    /// Connection error
-    #[error("Connection error: {0}")]
-    ConnectionError(String),
-
-    /// Feed not found in feedIds.json
-    #[error("Feed not found for symbol: {0}")]
+    #[error("Feed not found: {0}")]
     FeedNotFound(String),
 
-    /// Invalid feed ID format
-    #[error("Invalid feed ID: {0}")]
-    InvalidFeedId(String),
-
-    /// API returned an error
     #[error("API error: {0}")]
     ApiError(String),
-
-    /// No price data returned
-    #[error("No price data returned for feed: {0}")]
-    NoPriceData(String),
-
-    /// Invalid symbol format
-    #[error("Invalid symbol format: {0}. Expected format: BASE/QUOTE (e.g., BTC/USD)")]
-    InvalidSymbol(String),
-
-    /// Subscription error
-    #[error("Subscription error: {0}")]
-    SubscriptionError(String),
 }
 
-/// Convenience Result type for Surge operations
+impl SurgeError {
+    /// Map error to HTTP status code
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            SurgeError::FeedNotFound(_) => StatusCode::NOT_FOUND,
+            SurgeError::ApiError(_) => StatusCode::BAD_GATEWAY,
+            SurgeError::HttpError(_) => StatusCode::BAD_GATEWAY,
+            SurgeError::JsonError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SurgeError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl IntoResponse for SurgeError {
+    fn into_response(self) -> Response {
+        let status = self.status_code();
+        let body = Json(serde_json::json!({
+            "success": false,
+            "error": self.to_string()
+        }));
+        (status, body).into_response()
+    }
+}
+
 pub type Result<T> = std::result::Result<T, SurgeError>;

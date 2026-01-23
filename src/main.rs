@@ -58,9 +58,9 @@ async fn run() -> Result<()> {
             let loader = FeedLoader::load_default()?;
             let mut symbols = loader.get_all_symbols();
 
-            if let Some(f) = &filter {
-                let f = f.to_lowercase();
-                symbols.retain(|s| s.to_lowercase().contains(&f));
+            if let Some(ref filter_term) = filter {
+                let filter_lower = filter_term.to_lowercase();
+                symbols.retain(|s| s.to_lowercase().contains(&filter_lower));
             }
 
             if json {
@@ -80,16 +80,16 @@ async fn run() -> Result<()> {
                 process::exit(1);
             }
 
-            let refs: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+            let symbol_refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
             let mut surge = Surge::new(""); // API key not required
-            let mut rx = surge.subscribe_events();
-            surge.connect_and_subscribe(refs).await?;
+            let mut event_rx = surge.subscribe_events();
+            surge.connect_and_subscribe(symbol_refs).await?;
 
             if !json {
                 eprintln!("Streaming {} (Ctrl+C to stop)\n", symbols.join(", "));
             }
 
-            while let Ok(event) = rx.recv().await {
+            while let Ok(event) = event_rx.recv().await {
                 match event {
                     SurgeEvent::PriceUpdate(u) => {
                         if json {
@@ -113,8 +113,8 @@ async fn run() -> Result<()> {
             }
 
             let client = SurgeClient::new()?;
-            let refs: Vec<&str> = cli.symbols.iter().map(|s| s.as_str()).collect();
-            let prices = client.get_multiple_prices(&refs).await?;
+            let symbol_refs: Vec<&str> = cli.symbols.iter().map(String::as_str).collect();
+            let prices = client.get_multiple_prices(&symbol_refs).await?;
 
             if json {
                 println!("{}", serde_json::to_string_pretty(&prices)?);

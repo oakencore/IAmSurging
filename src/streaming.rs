@@ -25,8 +25,10 @@ enum ControlMessage {
 impl Surge {
     pub fn new(api_key: impl Into<String>) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
-        let mut config = SurgeConfig::default();
-        config.api_key = api_key.into();
+        let config = SurgeConfig {
+            api_key: api_key.into(),
+            ..SurgeConfig::default()
+        };
         Self {
             config,
             event_tx,
@@ -41,8 +43,8 @@ impl Surge {
     }
 
     pub async fn connect_and_subscribe(&mut self, symbols: Vec<&str>) -> Result<()> {
-        let symbols: Vec<String> = symbols.into_iter().map(|s| s.to_string()).collect();
-        *self.subscriptions.write().await = symbols.clone();
+        let symbols: Vec<String> = symbols.iter().map(|&s| s.to_owned()).collect();
+        *self.subscriptions.write().await = symbols;
 
         let (control_tx, control_rx) = mpsc::channel(100);
         self.control_tx = Some(control_tx);
@@ -114,12 +116,18 @@ async fn connection_loop(
                 let (mut write, mut read) = ws_stream.split();
 
                 // Subscribe to symbols
-                let subs = subscriptions.read().await.clone();
-                if !subs.is_empty() {
-                    let msg = SubscriptionRequest {
-                        action: "subscribe".to_string(),
-                        symbols: subs.iter().map(|s| SymbolRequest { symbol: s.clone() }).collect(),
-                    };
+                let subscription_msg = {
+                    let current_subs = subscriptions.read().await;
+                    if current_subs.is_empty() {
+                        None
+                    } else {
+                        Some(SubscriptionRequest {
+                            action: "subscribe".to_string(),
+                            symbols: current_subs.iter().map(|s| SymbolRequest { symbol: s.clone() }).collect(),
+                        })
+                    }
+                };
+                if let Some(msg) = subscription_msg {
                     if let Ok(json) = serde_json::to_string(&msg) {
                         let _ = write.send(Message::Text(json)).await;
                     }

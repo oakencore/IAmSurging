@@ -2,6 +2,39 @@
 
 The easiest way to get live crypto prices from [Switchboard Surge](https://switchboard.xyz).
 
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/you/IAmSurging.git
+cd IAmSurging
+
+# Run the setup script (generates feedIds.json, creates .env)
+./scripts/setup.sh
+
+# Or for non-interactive setup with defaults
+./scripts/setup.sh --quick
+```
+
+The setup script will:
+1. Check for required dependencies (Node.js 18+)
+2. Create `.env` from the template
+3. Generate `feedIds.json` with 2,000+ trading pairs from Switchboard
+4. Optionally build the project
+
+### Setup Options
+
+```bash
+# Set API key during setup (for server authentication)
+./scripts/setup.sh --api-key your-secret-key
+
+# Use a custom Switchboard API endpoint
+./scripts/setup.sh --feeds-api https://custom.api.url/feeds
+
+# Show all options
+./scripts/setup.sh --help
+```
+
 ## Install
 
 ```bash
@@ -122,7 +155,7 @@ docker run -p 9000:9000 -e SURGE_API_KEY=your-secret-key surge-server
 docker run -p 9000:9000 surge-server
 ```
 
-**Note:** The Docker build requires `feedIds.json` in the project root. This file contains Switchboard feed IDs and is not included in the repository. You can generate it by running `cargo run --bin surge` or obtain it from Switchboard.
+**Note:** The Docker build requires `feedIds.json` in the project root. Run `./scripts/setup.sh` to generate it automatically.
 
 ## How It Works
 

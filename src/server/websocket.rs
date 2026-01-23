@@ -157,25 +157,29 @@ async fn handle_socket(socket: WebSocket) {
 
 async fn reconnect_surge(
     surge: &Arc<RwLock<Option<Surge>>>,
-    symbols: &Arc<RwLock<HashSet<String>>>,
+    subscribed_symbols: &Arc<RwLock<HashSet<String>>>,
     tx: &mpsc::Sender<ServerMessage>,
 ) {
     // Disconnect existing connection
-    if let Some(s) = surge.write().await.take() {
-        let _ = s.disconnect().await;
+    if let Some(old_surge) = surge.write().await.take() {
+        let _ = old_surge.disconnect().await;
     }
 
-    let subs = symbols.read().await;
-    if subs.is_empty() {
-        return;
-    }
+    let symbols: Vec<String> = {
+        let current_subs = subscribed_symbols.read().await;
+        if current_subs.is_empty() {
+            return;
+        }
+        current_subs.iter().cloned().collect()
+    };
 
-    let refs: Vec<&str> = subs.iter().map(|s| s.as_str()).collect();
+    let symbol_refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
     let mut new_surge = Surge::new("");
-    if let Err(e) = new_surge.connect_and_subscribe(refs).await {
-        let _ = tx.send(ServerMessage::Error { message: e.to_string() }).await;
-    } else {
-        *surge.write().await = Some(new_surge);
+    match new_surge.connect_and_subscribe(symbol_refs).await {
+        Ok(()) => *surge.write().await = Some(new_surge),
+        Err(e) => {
+            let _ = tx.send(ServerMessage::Error { message: e.to_string() }).await;
+        }
     }
 }
 

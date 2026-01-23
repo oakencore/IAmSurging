@@ -4,27 +4,42 @@
  * Discover and save Switchboard Surge feed IDs
  *
  * Usage:
- *   node discover-feeds.js              # Interactive mode
- *   node discover-feeds.js --all        # Save all feeds
- *   node discover-feeds.js --list       # List all feeds
- *   node discover-feeds.js --search BTC # Search feeds
+ *   node scripts/discover-feeds.js              # Interactive mode
+ *   node scripts/discover-feeds.js --all        # Save all feeds
+ *   node scripts/discover-feeds.js --list       # List all feeds
+ *   node scripts/discover-feeds.js --search BTC # Search feeds
+ *
+ * Environment Variables:
+ *   FEEDS_API_URL - Custom Switchboard feeds API URL
+ *                   Default: https://explorer.switchboardlabs.xyz/api/feeds
  */
 
 const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 
-const API_URL = 'https://explorer.switchboardlabs.xyz/api/feeds';
-const OUTPUT_FILE = 'feedIds.json';
+// Configuration
+const API_URL = process.env.FEEDS_API_URL || 'https://explorer.switchboardlabs.xyz/api/feeds';
+
+// Output file is always in project root
+const SCRIPT_DIR = __dirname;
+const PROJECT_ROOT = path.dirname(SCRIPT_DIR);
+const OUTPUT_FILE = path.join(PROJECT_ROOT, 'feedIds.json');
 
 async function fetchAllFeeds() {
     let allFeeds = [];
     let page = 1;
     let totalPages = 1;
 
-    console.log('Fetching feeds from Switchboard...');
+    console.log(`Fetching feeds from: ${API_URL}`);
 
     while (page <= totalPages) {
         const response = await fetch(`${API_URL}?page=${page}&limit=100`);
+
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
         const data = await response.json();
 
         allFeeds = allFeeds.concat(data.feeds);
@@ -52,7 +67,9 @@ function saveFeeds(feeds, filename) {
     const feedMap = {};
     feeds.forEach(feed => {
         const formatted = formatFeedId(feed);
-        feedMap[formatted.symbol] = formatted.feedId;
+        if (formatted.feedId) {  // Only save feeds with valid IDs
+            feedMap[formatted.symbol] = formatted.feedId;
+        }
     });
 
     fs.writeFileSync(filename, JSON.stringify(feedMap, null, 2));
@@ -129,7 +146,9 @@ async function interactiveMode(feeds) {
             if (selection.toLowerCase() === 'all') {
                 matches.forEach(feed => {
                     const formatted = formatFeedId(feed);
-                    selectedFeeds[formatted.symbol] = formatted.feedId;
+                    if (formatted.feedId) {
+                        selectedFeeds[formatted.symbol] = formatted.feedId;
+                    }
                 });
                 console.log(`Added ${matches.length} feeds.`);
             } else if (selection.toLowerCase() !== 'none') {
@@ -137,8 +156,10 @@ async function interactiveMode(feeds) {
                 nums.forEach(i => {
                     if (i >= 0 && i < matches.length) {
                         const formatted = formatFeedId(matches[i]);
-                        selectedFeeds[formatted.symbol] = formatted.feedId;
-                        console.log(`Added ${formatted.symbol}`);
+                        if (formatted.feedId) {
+                            selectedFeeds[formatted.symbol] = formatted.feedId;
+                            console.log(`Added ${formatted.symbol}`);
+                        }
                     }
                 });
             }

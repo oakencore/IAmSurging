@@ -23,11 +23,9 @@ async fn main() {
         .init();
 
     // Check for API key
-    let api_key = std::env::var("SURGE_API_KEY").unwrap_or_default();
-    if api_key.is_empty() {
-        tracing::warn!("SURGE_API_KEY not set - API authentication is disabled");
-    } else {
-        tracing::info!("API key authentication enabled");
+    match std::env::var("SURGE_API_KEY") {
+        Ok(key) if !key.is_empty() => tracing::info!("API key authentication enabled"),
+        _ => tracing::warn!("SURGE_API_KEY not set - API authentication is disabled"),
     }
 
     // Initialize metrics

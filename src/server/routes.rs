@@ -133,10 +133,12 @@ pub async fn get_price(
     state: axum::extract::State<AppState>,
     Path(symbol): Path<String>,
 ) -> impl IntoResponse {
-    match state.client.get_price(&symbol).await {
-        Ok(price) => (StatusCode::OK, ApiResponse::success(PriceResponse::from(price))).into_response(),
-        Err(e) => (e.status_code(), ApiResponse::<()>::error(e.to_string())).into_response(),
-    }
+    state
+        .client
+        .get_price(&symbol)
+        .await
+        .map(|price| (StatusCode::OK, ApiResponse::success(PriceResponse::from(price))).into_response())
+        .unwrap_or_else(|e| (e.status_code(), ApiResponse::<()>::error(e.to_string())).into_response())
 }
 
 /// Get prices for multiple symbols
@@ -145,19 +147,21 @@ pub async fn get_prices(
     state: axum::extract::State<AppState>,
     Query(query): Query<PricesQuery>,
 ) -> impl IntoResponse {
-    let symbols: Vec<&str> = query.symbols.split(',').map(|s| s.trim()).collect();
+    let symbols: Vec<&str> = query.symbols.split(',').map(str::trim).collect();
 
     if symbols.is_empty() {
         return (StatusCode::BAD_REQUEST, ApiResponse::<()>::error("No symbols provided")).into_response();
     }
 
-    match state.client.get_multiple_prices(&symbols).await {
-        Ok(prices) => {
+    state
+        .client
+        .get_multiple_prices(&symbols)
+        .await
+        .map(|prices| {
             let response: Vec<PriceResponse> = prices.into_iter().map(PriceResponse::from).collect();
             (StatusCode::OK, ApiResponse::success(response)).into_response()
-        }
-        Err(e) => (e.status_code(), ApiResponse::<()>::error(e.to_string())).into_response(),
-    }
+        })
+        .unwrap_or_else(|e| (e.status_code(), ApiResponse::<()>::error(e.to_string())).into_response())
 }
 
 /// List available symbols
@@ -168,18 +172,19 @@ pub async fn list_symbols(
 ) -> impl IntoResponse {
     let mut symbols = state.client.get_all_symbols();
 
-    if let Some(filter) = &query.filter {
-        let filter = filter.to_lowercase();
-        symbols.retain(|s| s.to_lowercase().contains(&filter));
+    if let Some(ref filter_term) = query.filter {
+        let filter_lower = filter_term.to_lowercase();
+        symbols.retain(|s| s.to_lowercase().contains(&filter_lower));
     }
 
+    let count = symbols.len();
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "success": true,
             "data": {
                 "symbols": symbols,
-                "count": symbols.len()
+                "count": count
             }
         })),
     )
@@ -321,7 +326,7 @@ mod tests {
         let query = PricesQuery {
             symbols: "btc,eth,sol".to_string(),
         };
-        let symbols: Vec<&str> = query.symbols.split(',').map(|s| s.trim()).collect();
+        let symbols: Vec<&str> = query.symbols.split(',').map(str::trim).collect();
         assert_eq!(symbols, vec!["btc", "eth", "sol"]);
     }
 
@@ -330,7 +335,7 @@ mod tests {
         let query = PricesQuery {
             symbols: "btc , eth , sol".to_string(),
         };
-        let symbols: Vec<&str> = query.symbols.split(',').map(|s| s.trim()).collect();
+        let symbols: Vec<&str> = query.symbols.split(',').map(str::trim).collect();
         assert_eq!(symbols, vec!["btc", "eth", "sol"]);
     }
 

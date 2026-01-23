@@ -21,23 +21,20 @@ pub async fn require_api_key(request: Request, next: Next) -> Result<Response, S
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
 
-    match auth_header {
-        Some(header) if header.starts_with("Bearer ") => {
-            let token = &header[7..];
-            if token == expected_key {
-                Ok(next.run(request).await)
-            } else {
-                tracing::warn!("Invalid API key provided");
-                Err(StatusCode::UNAUTHORIZED)
-            }
-        }
-        Some(_) => {
-            tracing::warn!("Invalid authorization header format");
-            Err(StatusCode::UNAUTHORIZED)
-        }
-        None => {
-            tracing::warn!("Missing authorization header");
-            Err(StatusCode::UNAUTHORIZED)
-        }
+    let Some(header) = auth_header else {
+        tracing::warn!("Missing authorization header");
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(token) = header.strip_prefix("Bearer ") else {
+        tracing::warn!("Invalid authorization header format");
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    if token != expected_key {
+        tracing::warn!("Invalid API key provided");
+        return Err(StatusCode::UNAUTHORIZED);
     }
+
+    Ok(next.run(request).await)
 }

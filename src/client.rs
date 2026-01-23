@@ -62,10 +62,12 @@ impl SurgeClient {
 
     async fn fetch_price(&self, feed_id: &str) -> Result<f64> {
         let url = format!("{}/simulate/{}", CROSSBAR_URL, feed_id);
-        let resp: Vec<SimulateResponse> = self.http.get(&url).send().await?.json().await?;
-        resp.first()
+        let responses: Vec<SimulateResponse> = self.http.get(&url).send().await?.json().await?;
+
+        responses
+            .first()
             .and_then(|r| r.results.first())
-            .and_then(|s| s.parse().ok())
+            .and_then(|price_str| price_str.parse().ok())
             .ok_or_else(|| SurgeError::ApiError(format!("No price data for feed {}", feed_id)))
     }
 }
